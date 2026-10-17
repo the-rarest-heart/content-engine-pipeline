@@ -32,9 +32,22 @@ def main():
 
     out = []
     A = out.append
-    A("# Edit plan: Action Items (TRH Reach)\n")
-    A(f"Source `videos/action items.mp4` is 1080x1920, 60 fps, {ms(src_total)}. "
-      f"Brief `briefs/trh-reach.md`. Target 2 minutes.\n")
+    slug = os.path.basename(os.getcwd())
+    title = (NOTES.get("title") if "NOTES" in globals() else None) or slug
+    brief = (NOTES.get("brief") if "NOTES" in globals() else None) or "briefs/trh-reach.md"
+    target = (NOTES.get("target") if "NOTES" in globals() else None)
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height,r_frame_rate",
+                            "-of", "default=noprint_wrappers=1:nokey=1", SRC],
+                           capture_output=True, text=True).stdout.split()
+    dims = f"{probe[0]}x{probe[1]}" if len(probe) > 1 else "?"
+    try:
+        n, d = probe[2].split("/"); fps_s = f"{float(n)/float(d):.0f} fps"
+    except Exception:
+        fps_s = "?"
+    A(f"# Edit plan: {title}\n")
+    A(f"Source `{SRC}` is {dims}, {fps_s}, {ms(src_total)}. Brief `{brief}`."
+      + (f" Target {target}." if target else "") + "\n")
     A(f"**Final length {ms(final)}** across {len(segs)} cuts.\n")
     A("| stage | length | removed |")
     A("| --- | --- | --- |")

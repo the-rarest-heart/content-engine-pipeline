@@ -101,6 +101,7 @@ def main(mode="full", out_name="index.html"):
           line-height:1; transform-origin:50% 50%;
           filter:drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 6px 18px rgba(0,0,0,.6)); }}
 
+  .orbit {{ position:absolute; left:0; right:0; }}
   .shot {{ position:absolute; border-radius:20px; overflow:hidden;
            box-shadow:0 26px 70px rgba(0,0,0,.72);
            border:3px solid rgba(57,255,20,.55); background:#0b0b0f; }}
@@ -162,6 +163,16 @@ def main(mode="full", out_name="index.html"):
                        f'<div class="who">{esc(pill)}</div></div>\n')
         out.append('  </div>\n')
         anim_js = [a_st, a_du, len(rows), bool(ANIM.get("tick", True))]
+
+    # --- the orbit, as a sub-composition host ---
+    if "ORBIT" in globals() and ORBIT and ORBIT["at"][0] in M:
+        o_st = at(ORBIT["at"][0], ORBIT["at"][1])
+        o_du = clamp(o_st, ORBIT["dur"])
+        out.append(f'  <div class="clip orbit" id="orbit" data-composition-id="orbit" '
+                   f'data-start="{o_st}" data-duration="{o_du}" data-track-index="2" '
+                   f'data-composition-src="compositions/orbit.html" '
+                   f'style="top:{ORBIT.get("top", 170)}px; height:{ORBIT.get("height", 1000)}px;">'
+                   f'</div>\n')
 
     # --- screenshots ---
     shot_js = []
