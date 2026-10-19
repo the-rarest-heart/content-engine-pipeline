@@ -18,7 +18,8 @@ SRC        = "<source>.mp4"      # the file inside this folder
 FPS        = 60.0                # ffprobe r_frame_rate, exactly
 FRAME      = 1.0 / FPS
 PAUSE_KEEP = 0.25                # pauses longer than this get squeezed
-SQUEEZE_TO = 0.16                # ...down to about this
+SQUEEZE_TO = 0.16
+MIN_TRIM   = 0.35   # trims shorter than this are not worth a visible jump                # ...down to about this
 SNAP       = 0.12                # search window for the quietest edge
 FADE       = 0.012               # audio fade at each join
 
@@ -53,7 +54,7 @@ HOLD = 0.75        # max time one word stays highlighted
 
 # Whisper's mistakes, anchored by (text, time window) so a fix cannot hit the
 # wrong instance. None drops the word; it has been merged into its neighbour.
-PATCH      = []    # [("the", 14.05, 14.25, "YourBrand"), ("brand", 14.25, 14.60, None)]
+PATCH      = []    # [("hyper", 14.05, 14.25, "HyperFrames"), ("frames", 14.25, 14.60, None)]
 TIME_PATCH = []    # [("love.", 213.90, 214.20, 213.45)] where DTW is measurably wrong
 
 # ==========================================================================
@@ -83,7 +84,7 @@ CLOSE_CARD = None   # {"text": "Love.", "at": ("close", 0.4), "dur": 2.4, "top":
 # ==========================================================================
 # Whisper mishearings that are not cut defects. Listing them here keeps the
 # diff showing only real problems.
-HEARD_OK = []    # [("yourbrand", "your brand"), ...]
+HEARD_OK = []    # [("hyperframes", "hyper frames"), ("claude", "cloud"), ...]
 
 SRC_DURATION = 0.0               # ffprobe, for the plan
 SPEECH_FROM, SPEECH_TO = 0.0, 0.0

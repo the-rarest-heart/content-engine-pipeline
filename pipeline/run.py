@@ -139,6 +139,61 @@ def new():
     run("npx", "hyperframes", "init", slug, "--non-interactive",
         "--video", os.path.abspath(src), "--skill", "general-video")
 
+    # Anything the edit keeps under compositions/ or assets/ goes back into the
+    # video folder at the same relative path. Without this a rebuild came back
+    # without its sub-compositions: edit.py was restored but the orbit scene
+    # and the paper rip were not, and a fresh "hyperframes add" would reinstall
+    # a pristine component over a vendored one that was deliberately changed.
+    import shutil as _sh
+    for tree in ("compositions", "assets"):
+        srcdir = os.path.join(edit_dir, tree)
+        if not os.path.isdir(srcdir):
+            continue
+        for root, _dirs, files in os.walk(srcdir):
+            for name in files:
+                if name == ".DS_Store":
+                    continue
+                full = os.path.join(root, name)
+                rel = os.path.relpath(full, edit_dir)
+                dest = os.path.join(slug, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                _sh.copyfile(full, dest)
+                print(f"    restored {rel}")
+
+    # The transcript is the one expensive step in a rebuild and it never
+    # changes unless the footage does, so it lives with the edit.
+    if restored:
+        tdir = os.path.join(edit_dir, "transcript")
+        if os.path.isdir(tdir):
+            os.makedirs(os.path.join(slug, "work"), exist_ok=True)
+            for name in os.listdir(tdir):
+                _sh.copyfile(os.path.join(tdir, name),
+                             os.path.join(slug, "work", name))
+                print(f"    restored work/{name}")
+
+    # edit.py names its source file; the copy that landed here is named after
+    # whatever the archive called it. Link the expected name to it so a rebuild
+    # does not need the raw footage renamed by hand.
+    if restored:
+        want = None
+        for line in open(edit_py):
+            if line.startswith("SRC"):
+                want = line.split("=", 1)[1].strip().strip('"\'')
+                break
+        if want and not os.path.exists(os.path.join(slug, want)):
+            here = [f for f in os.listdir(slug)
+                    if f.lower().endswith((".mp4", ".mov", ".m4v"))]
+            if len(here) == 1:
+                try:
+                    os.link(os.path.join(slug, here[0]), os.path.join(slug, want))
+                except OSError:
+                    _sh.copyfile(os.path.join(slug, here[0]), os.path.join(slug, want))
+                print(f"    linked {want} -> {here[0]}  (edit.py names the source)")
+            elif not here:
+                print(f"    NOTE edit.py wants {want}; no video file found here")
+            else:
+                print(f"    NOTE edit.py wants {want}; several videos here, link it yourself")
+
     rel = os.path.relpath(edit_dir, os.path.join(os.getcwd(), slug))
     if restored:
         print(f"\n  {slug}/ rebuilt against the existing edit at {rel}")
@@ -151,11 +206,52 @@ def new():
         print( "    python3 ../../pipeline/run.py doctor")
         print( "    python3 ../../pipeline/run.py transcribe")
 
+def final():
+    """Render the composition to out/<slug>.mp4 — the file you actually post.
+
+    Roughly 1.6x realtime at 1080x1920/60, so a 100s video is about 9 minutes.
+    `render` above is a different thing: it rebuilds the cut footage that this
+    composition plays underneath the graphics.
+    """
+    slug = os.path.basename(os.getcwd())
+    out = os.path.join("out", f"{slug}.mp4")
+    os.makedirs("out", exist_ok=True)
+    run("npx", "hyperframes", "render", "-o", out)
+    if os.path.exists(out):
+        print(f"\n  {out}  {os.path.getsize(out) / 1e6:.0f} MB")
+        print( "  verify it before posting, against the render and not a snapshot:")
+        print( "    python3 ../../pipeline/run.py loop   # re-reads the finished file")
+
+
+def keep_transcript():
+    """Copy this video's transcript into its edit, so a rebuild skips whisper.
+
+    work/words.json and work/transcript-dtw.json are derived purely from the
+    footage. Re-deriving them on every rebuild is the only slow part of
+    bringing a deleted video back.
+    """
+    import shutil
+    slug = os.path.basename(os.getcwd())
+    dest = os.path.join(HERE, "edits", slug, "transcript")
+    os.makedirs(dest, exist_ok=True)
+    kept = 0
+    for name in ("words.json", "transcript-dtw.json", "audio16k.wav", "silences.txt"):
+        src = os.path.join("work", name)
+        if os.path.exists(src):
+            shutil.copyfile(src, os.path.join(dest, name))
+            print(f"  kept {name}  {os.path.getsize(src)/1e6:.1f} MB")
+            kept += 1
+    if not kept:
+        sys.exit("nothing to keep: run transcribe first")
+    print(f"\n  a rebuild of {slug} will now skip transcribing")
+
+
 STAGES = {
     "new":        new,
     "doctor":     lambda: py("doctor.py"),
     "shots":      lambda: py("shots.py"),
     "transcribe": transcribe,
+    "keep":       keep_transcript,
     "cut":        lambda: py("edl.py"),
     "loop":       loop,
     "edges":      edges,
@@ -164,8 +260,12 @@ STAGES = {
     "fcp":        fcp,
     "fcpxml":     lambda: py("fcpxml.py"),
     "check":      lambda: run("npx", "hyperframes", "check"),
+    "final":      final,
+    # render BEFORE compose, always: compose describes the footage, so the
+    # footage has to exist and match first. compose now refuses stale footage
+    # rather than quietly composing against it.
     "all":        lambda: (loop(), py("edl.py", "--render"), compose(),
-                           run("npx", "hyperframes", "check")),
+                           run("npx", "hyperframes", "check"), final()),
 }
 
 if __name__ == "__main__":

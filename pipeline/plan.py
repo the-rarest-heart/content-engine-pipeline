@@ -98,7 +98,10 @@ def main():
     notes = NOTES if "NOTES" in globals() else {}
     cue = notes.get("shots", {})
     for label, off, dur, asset, w, top, side in b["SHOTS"]:
-        A(f"| {mt(label, off)} | {dur:.1f}s | `{asset}` | {cue.get(label, '')} |")
+        # Keyed by asset first: several cards can share one moment, so the
+        # label alone cannot tell them apart. Label is the older fallback.
+        A(f"| {mt(label, off)} | {dur:.1f}s | `{asset}` | "
+          f"{cue.get(asset) or cue.get(label, '')} |")
     A("")
     A("## Punch ins\n")
     A("| at | length | zoom | on |")

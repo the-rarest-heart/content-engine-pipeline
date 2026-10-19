@@ -253,6 +253,62 @@ def build():
         segmap.append({"label": label, "words": kept_ix,
                        "parts": [[round(p, 5), round(q, 5)] for p, q in parts]})
         report.append((label, a, b, sum(q - p for p, q in parts), saved, why, len(parts)))
+    # Merge away trims too small to be worth a visible cut.
+    #
+    # A cut on a static talking head costs something even when it removes
+    # nothing of value: the head jumps. Independent edge snapping on two
+    # CONTIGUOUS moments pulls one boundary earlier and the next later, which
+    # opens a hole of a tenth of a second where the take was continuous, and
+    # the viewer sees a hitch that buys no time at all. Anything under
+    # MIN_TRIM is not removed: the footage stays joined.
+    min_trim = MIN_TRIM if "MIN_TRIM" in globals() else 0.0
+    if min_trim > 0:
+        merged, dropped = [segs[0]], 0.0
+        for a, b in segs[1:]:
+            pa, pb = merged[-1]
+            if 0 < a - pb < min_trim:
+                merged[-1] = (pa, b)      # one continuous piece, nothing cut
+                dropped += a - pb
+            else:
+                merged.append((a, b))
+        if len(merged) != len(segs):
+            print(f"merged {len(segs) - len(merged)} micro cuts "
+                  f"(kept {dropped:.2f}s that was not worth a jump)")
+        # The moments have to TILE the merged segments: every instant of
+        # kept footage must belong to exactly one moment, with no holes and no
+        # overlaps. Intersecting each moment with its own original span left
+        # the merged gap belonging to nobody, so the durations summed short,
+        # every edit_start after the first merge was early, the captions ran
+        # ahead of the voice, and anything positioned from a moment start (the
+        # zoom through) fired in the wrong place.
+        #
+        # Each moment therefore owns [its own start, the next moment's start),
+        # and the last one owns everything to the end.
+        bounds = [min(p for p, _ in m["parts"]) for m in segmap]
+        for n, m in enumerate(segmap):
+            a = bounds[n]
+            b = bounds[n + 1] if n + 1 < len(bounds) else float("inf")
+            fixed = []
+            for sa, sb in merged:
+                p, q = max(sa, a), min(sb, b)
+                # Partitioning, not segmenting: a sub-frame sliver still
+                # carries its duration and dropping it is exactly the one
+                # frame of drift this assertion catches.
+                if q - p > 1e-9:
+                    fixed.append([round(p, 5), round(q, 5)])
+            if fixed:
+                m["parts"] = fixed
+
+        # The sum has to match the cut exactly, or caption timing is built on a
+        # different video than the one being rendered.
+        _seg = sum(b - a for a, b in merged)
+        _map = sum(q - p for m in segmap for p, q in m["parts"])
+        if abs(_seg - _map) > 0.002:
+            sys.exit(f"segmap does not tile the cut: {_map:.3f}s mapped against "
+                     f"{_seg:.3f}s of segments ({_seg - _map:+.3f}s). "
+                     f"Caption timing would drift by that much.")
+        segs = merged
+
     # edit-time offset of each moment, in order
     acc = 0.0
     for m in segmap:
@@ -275,7 +331,7 @@ def main():
     src_speech = 214.35 - 4.52
     print(f"source speech      {src_speech:7.2f}s")
     print(f"after content cuts {sum(b-a for _,a,b,_,_,_,_ in report):7.2f}s")
-    print(f"after pause squeeze{total:7.2f}s   ({total/60:.0f}m {total%60:04.1f}s)")
+    print(f"after pause squeeze{total:7.2f}s   ({int(total//60)}m {total%60:04.1f}s)")
     print(f"segments           {len(segs)}")
     json.dump([[round(a,5), round(b,5)] for a, b in segs], open("work/edl.json", "w"), indent=1)
     print("wrote work/edl.json")
